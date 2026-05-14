@@ -14,22 +14,33 @@ InfraGuard sits between the internet and your C2 teamserver, validating every in
 ## Features
 
 - **Multi-domain proxying** -- proxy multiple domains simultaneously, each with independent C2 profiles, upstreams, and rules
-- **C2 profile validation** -- parse and enforce Cobalt Strike, Mythic, Brute Ratel C4, Sliver, and Havoc profiles as redirector rules
+- **C2 profile validation** -- parse and enforce Cobalt Strike, Mythic, Brute Ratel C4, Sliver, Havoc, Nighthawk, and PoshC2 profiles as redirector rules
 - **Multi-protocol listeners** -- HTTP/HTTPS, DNS, MQTT, and WebSocket listeners running simultaneously with shared IP intelligence and event tracking
-- **Scoring-based filter pipeline** -- 7 filters (IP, bot, header, DNS, geo, profile, replay) each contribute a 0.0-1.0 score; configurable threshold determines block/allow
+- **Scoring-based filter pipeline** -- 10 filters (JA3, IP, bot, header, DNS, geo, profile, replay, enumeration, sandbox) each contribute a 0.0-1.0 score; configurable threshold determines block/allow
+- **JA3 TLS fingerprint filtering** -- block Masscan, ZGrab2, Shodan, curl, Python requests, and Nmap at the TLS handshake layer before any HTTP data is exchanged; works via reverse-proxy header (nginx `ssl_fingerprint`, HAProxy native JA3) or custom asyncio protocol; optional allowlist mode enforces beacon JA3
+- **Sandbox / headless browser detection** -- score-accumulation model across HTTP signals: HeadlessChrome UA, missing Accept-Language, Chrome without sec-ch-ua, Safe Links / msnbot scanner UAs, non-browser Accept ordering; blocks Microsoft Safe Links, Cuckoo, ANY.RUN, and VirusTotal URL scanners
+- **Path enumeration detection** -- per-IP unique URI tracking in a sliding window; hard-blocks dirbuster/ffuf/gobuster before they map URI space; configurable block and suspect thresholds
+- **DNS subdomain enumeration detection** -- tracks NXDOMAIN responses per client IP; immediately adds the source IP to the blocklist on threshold breach; blocks Amass, subfinder, dnsrecon at the DNS listener
 - **Anti-bot / anti-crawling** -- 40+ known scanner/bot User-Agent patterns, header anomaly detection
 - **IP intelligence** -- built-in CIDR blocklists for 19 security vendor ranges (Shodan, Censys, Rapid7, etc.), GeoIP filtering, reverse DNS keyword matching
 - **Threat intel feeds** -- auto-update blocklists from public sources (abuse.ch, Emerging Threats, Spamhaus DROP, Binary Defense) with configurable refresh interval and disk caching
 - **Rule ingestion** -- import IP blocklists and User-Agent patterns from existing `.htaccess` and `robots.txt` files
 - **Dynamic IP blocking** -- block IPs outside whitelisted ranges; auto-whitelist IPs after N valid C2 requests
 - **Whitelist enrichment** -- whitelisted CIDRs are auto-enriched with ASN, organization, country, and continent data on startup via GeoIP databases
-- **Content delivery routes** -- serve payloads, decoys, and static files at specific paths via PwnDrop, local filesystem, or HTTP proxy backends, with optional conditional delivery (real content to targets, decoys to scanners)
+- **Burn detection** -- Certificate Transparency log monitoring (crt.sh polling), domain reputation self-monitoring (URLhaus, OpenPhish, Google Safe Browsing), and cross-domain analyst detection (single IP accessing multiple operator domains); all fire burn alerts through existing webhook plugins
+- **Content delivery routes** -- serve payloads, decoys, and static files at specific paths via PwnDrop, Mythic file store, local filesystem, or HTTP proxy backends; optional conditional delivery (real content to targets, decoys to scanners)
+- **Mythic file staging** -- `mythic_file` backend proxies Mythic's `/direct/download/{uuid}` at clean URLs; fixed UUID (URL aliasing) or proxy mode (UUID from path); access control provided entirely by InfraGuard's filter stack
+- **One-time payload tokens** -- tokens issued automatically when a beacon is dynamically whitelisted; atomic single-use SQLite enforcement prevents URL replay by analysts or sandboxes; configurable TTL and max-use count
+- **Per-route rate limiting** -- sliding-window per-IP download rate limiter on content routes; exceeding the limit serves the configured scanner decoy or 429
+- **Delivery guards** -- environment keying for content routes: require beacon IP (dynamic whitelist), UA allowlist (regex), required header values (implant-specific headers), forbidden headers (Via, X-Forwarded-For, CF-Worker); failed checks serve domain drop action, not a raw 403
+- **Phishing campaign tokens** -- gate phishing pages behind per-campaign tokens embedded in email links; static token list or HMAC-signed self-validating tokens with configurable TTL; analysts who find the URL via CT logs or threat feeds cannot load the page
+- **Replay protection** -- reject duplicate requests by content hash; hashes persisted to SQLite so protection survives restarts
 - **Drop actions** -- redirect, TCP reset, proxy to decoy site, or tarpit (slow-drip response to waste scanner time)
 - **Web dashboard** -- real-time SPA with login page, live request feed, domain stats, top blocked IPs, authenticated WebSocket event streaming, and inline block/whitelist/unblock actions
 - **Command Post** -- multi-instance aggregation dashboard that merges stats, requests, and live events from multiple InfraGuard nodes into a single view
 - **Terminal UI** -- Textual-based TUI with login screen, live API polling, color-coded request log
 - **SIEM integration** -- built-in plugins for Elasticsearch, Wazuh, and Syslog (CEF/JSON) with batched forwarding
-- **Webhook alerts** -- built-in plugins for Discord (embeds), Slack (Block Kit), and generic webhook (Rocket.Chat, Mattermost, Teams)
+- **Webhook alerts** -- built-in plugins for Discord (embeds), Slack (Block Kit), and generic webhook (Rocket.Chat, Mattermost, Teams); burn detection alerts route through the same plugin system
 - **Plugin system** -- event-driven architecture with `on_event` hooks, per-plugin config, event filtering (only_blocked, min_score, domain include/exclude)
 - **Backend config generation** -- generate Nginx, Caddy, or Apache configs with full operator customization (TLS, IP filtering, header checks, aliases, custom headers)
 - **Edge proxies** -- lightweight Cloudflare Worker and AWS Lambda for domain fronting through CDN infrastructure, edge country blocking, and host rewriting
@@ -39,7 +50,7 @@ InfraGuard sits between the internet and your C2 teamserver, validating every in
 - **Environment variable support** -- `.env` file auto-loaded; `${VAR}` syntax works in all config values and keys
 - **Configurable health endpoint** -- change the health check path to avoid fingerprinting
 - **Structured logging** -- JSON-formatted structured logs via structlog
-- **Tracking & persistence** -- SQLite with WAL mode for request logging, statistics, and node registry
+- **Tracking & persistence** -- SQLite with WAL mode for request logging, statistics, node registry, replay hashes, and payload tokens
 
 ## Installation Guide
 
@@ -70,8 +81,8 @@ infraguard profile parse <file> --format json        Output as JSON
 infraguard profile parse <file> --type brute_ratel   Force profile type
 infraguard profile convert <file> -o out.json        Convert profile to JSON
 
-# Supported --type values: auto, cobalt_strike, mythic, brute_ratel, sliver, havoc
-# Auto-detection: .profile = CS, .toml = Havoc, .json = auto-detect by keys
+# Supported --type values: auto, cobalt_strike, mythic, brute_ratel, sliver, havoc, nighthawk, poshc2
+# Auto-detection: .profile = CS, .toml = Havoc, .yaml = PoshC2, .json = auto-detect by keys
 
 infraguard ingest <files...>                         Ingest .htaccess/robots.txt rules
 infraguard ingest <files...> --format blocklist      Output as IP blocklist
@@ -277,8 +288,8 @@ infraguard/
     main.py                  Click CLI
     config/                  YAML config loading, .env support, Pydantic validation
     core/                    ASGI proxy engine (app, proxy, router, TLS, drop actions, content delivery)
-    profiles/                C2 profile parsers (Cobalt Strike, Mythic, Brute Ratel, Sliver, Havoc)
-    pipeline/                Request validation filters (IP, bot, header, DNS, geo, profile, replay)
+    profiles/                C2 profile parsers (Cobalt Strike, Mythic, Brute Ratel, Sliver, Havoc, Nighthawk, PoshC2)
+    pipeline/                Request validation filters (JA3, IP, bot, header, DNS, geo, profile, replay, enumeration, sandbox)
     intel/                   IP intelligence (blocklists, GeoIP, rDNS, feeds, rule ingestion)
     tracking/                SQLite persistence (request logging, stats, node registry)
     plugins/                 Plugin system (protocol, loader, builtins)
@@ -298,19 +309,25 @@ infraguard/
 |---|---|---|
 | Architecture | Single ~99KB file | Modular package |
 | Profile parsing | Regex state machine | Structured parser with full block/transform support |
-| C2 support | Cobalt Strike only | Cobalt Strike, Mythic, Brute Ratel C4, Sliver, Havoc |
+| C2 support | Cobalt Strike only | Cobalt Strike, Mythic, Brute Ratel C4, Sliver, Havoc, Nighthawk, PoshC2 |
 | Protocols | HTTP only | HTTP, DNS, MQTT, WebSocket |
-| Filter model | Binary pass/fail | Scoring-based (0.0-1.0 threshold) |
+| Filter model | Binary pass/fail | Scoring-based (0.0-1.0 threshold), 10-filter chain |
+| TLS fingerprinting | None | JA3 blocking (Masscan, ZGrab2, Shodan, curl, Python requests, Nmap) |
+| Sandbox detection | None | Headless browser / Safe Links / sandbox UA and header scoring |
+| Enumeration detection | None | Path enumeration + DNS NXDOMAIN tracking with auto-block |
+| Burn detection | None | CT log monitoring, domain reputation (URLhaus/OpenPhish/GSB), cross-domain analyst detection |
+| Payload delivery | None | PwnDrop, Mythic file store, filesystem, HTTP proxy with conditional delivery |
+| Payload protection | None | One-time tokens, per-route rate limiting, delivery guards (environment keying) |
+| Phishing protection | None | Campaign token validation (static list or HMAC-signed) |
 | Operator UI | None | Web dashboard + Terminal UI + multi-instance Command Post |
 | Config generation | None | Nginx, Caddy, Apache with full customization |
 | Rule ingestion | None | .htaccess + robots.txt parser |
-| Content delivery | None | PwnDrop, filesystem, HTTP proxy with conditional delivery |
 | Threat intel feeds | None | Auto-update from 5 public sources |
 | Plugin system | Basic 4-method interface | Event-driven with on_event hooks + per-plugin config |
 | SIEM integration | None | Elasticsearch, Wazuh, Syslog (CEF/JSON) |
-| Webhook alerts | None | Discord, Slack, generic webhook |
+| Webhook alerts | None | Discord, Slack, generic webhook (burn alerts route through same plugins) |
 | Whitelist intelligence | None | Auto-enrich CIDRs with ASN/org/country on startup |
-| Anti-replay | SQLite hash | In-memory with configurable window |
+| Anti-replay | SQLite hash | Persistent SQLite with in-memory L1 cache, survives restarts |
 | Drop actions | redirect, reset, proxy | redirect, reset, proxy, tarpit |
 | TLS management | Manual only | Auto self-signed + Let's Encrypt integration |
 | Edge deployment | None | Cloudflare Worker + AWS Lambda edge proxies with domain fronting |
@@ -327,10 +344,12 @@ infraguard/
   - InfinityCurve - [Havoc Profile](/examples/kaine.toml)
 - C2 Frameworks
   - [Cobalt Strike](https://www.cobaltstrike.com/) - Malleable C2 profile support
-  - [Mythic](https://github.com/its-a-feature/Mythic) - HTTPX profile support
+  - [Mythic](https://github.com/its-a-feature/Mythic) - HTTPX profile support + file staging
   - [Brute Ratel C4](https://bruteratel.com/) - Server config profile support
   - [Sliver](https://github.com/BishopFox/sliver) - HTTP C2 profile support
   - [Havoc](https://www.infinitycurve.org/) - TOML profile support
+  - [Nighthawk](https://nighthawkc2.io/) - JSON listener config support
+  - [PoshC2](https://github.com/nettitude/PoshC2) - YAML config support
 
 If you would like to contribute to the project, then please create a new branch with the version name and specify the same version name in the pull request. E.g. branch=v1.2.3 | [v1.2.3] Added blah item.
 
