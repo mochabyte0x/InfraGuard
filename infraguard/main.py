@@ -977,6 +977,19 @@ def test_request(
 from infraguard.deploy.cli import deploy_group
 cli.add_command(deploy_group)
 
+from infraguard.config.cli_ext import (
+    show_config,
+    set_value,
+    domain_group,
+    intel_group,
+    pipeline_group,
+)
+config_group.add_command(show_config, "show")
+config_group.add_command(set_value, "set")
+config_group.add_command(domain_group)
+config_group.add_command(intel_group)
+config_group.add_command(pipeline_group)
+
 
 if __name__ == "__main__":
     cli()
