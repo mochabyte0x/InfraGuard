@@ -27,6 +27,7 @@ class ProfileType(str, Enum):
     GOPHISH = "gophish"
     EVILGINX = "evilginx"
     CUDDLEPHISH = "cuddlephish"
+    PHISHING_CLUB = "phishing_club"
     PASSTHROUGH = "passthrough"
 
 
@@ -35,6 +36,7 @@ PHISHING_PROFILE_TYPES = frozenset({
     ProfileType.GOPHISH,
     ProfileType.EVILGINX,
     ProfileType.CUDDLEPHISH,
+    ProfileType.PHISHING_CLUB,
     ProfileType.PASSTHROUGH,
 })
 

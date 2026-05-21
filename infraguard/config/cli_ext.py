@@ -249,7 +249,8 @@ def domain_list(config_path: Path) -> None:
     "--profile-type",
     default="cobalt_strike",
     type=click.Choice(["cobalt_strike", "mythic", "brute_ratel", "sliver", "havoc",
-                       "nighthawk", "poshc2", "gophish", "evilginx", "cuddlephish", "passthrough"]),
+                       "nighthawk", "poshc2", "gophish", "evilginx", "cuddlephish",
+                       "phishing_club", "passthrough"]),
     show_default=True,
     help="C2/phishing framework type.",
 )
@@ -276,6 +277,7 @@ def domain_add(
     \b
     Examples:
       infraguard config domain add c2.example.com https://10.0.0.5:8443 --profile-type sliver
+      infraguard config domain add phish.evil.co https://127.0.0.1:8000 --profile-type phishing_club
       infraguard config domain add phish.evil.co https://10.0.0.6:80 --profile-type gophish
     """
     data = _load_raw(config_path)
@@ -507,7 +509,7 @@ def intel_block_country(config_path: Path, country_code: str) -> None:
     lst = _deep_ensure_list(data, ["intel", "blocked_countries"])
     allowed = data.get("intel", {}).get("allowed_countries") or []
     if cc in allowed:
-        click.echo(f"Warning: {cc} is in allowed_countries — remove it first with unallow-country.", err=True)
+        click.echo(f"Warning: {cc} is in allowed_countries - remove it first with unallow-country.", err=True)
     if cc not in lst:
         lst.append(cc)
         _save_raw(config_path, data)
@@ -782,7 +784,7 @@ def ja3_unblock(config_path: Path, hash_value: str) -> None:
 @_CONFIG_OPT
 @click.argument("hash_value")
 def ja3_allow(config_path: Path, hash_value: str) -> None:
-    """Add a JA3 hash to the allowlist (enables allowlist mode — all others blocked)."""
+    """Add a JA3 hash to the allowlist (enables allowlist mode - all others blocked)."""
     data = _load_raw(config_path)
     lst = _deep_ensure_list(data, ["pipeline", "ja3_filter", "allowed_ja3"])
     if hash_value not in lst:
@@ -810,4 +812,4 @@ def ja3_list(config_path: Path) -> None:
         for h in allowed:
             click.echo(f"  {h}")
     else:
-        click.echo("Allowed: (none — block list only, no allowlist)")
+        click.echo("Allowed: (none - block list only, no allowlist)")

@@ -65,6 +65,13 @@ def create_app(config: InfraGuardConfig) -> Starlette:
     async def health_check(request: Request) -> Response:
         return Response(content=b'{"status":"ok"}', media_type="application/json")
 
+    # Phishing.club webhook receiver
+    pc_cfg = config.phishingclub
+    _phishingclub_handler = None
+    if pc_cfg.enabled:
+        from infraguard.integrations.phishingclub import make_webhook_handler
+        _phishingclub_handler = make_webhook_handler(pc_cfg, db, recorder)
+
     async def _session_cleanup_loop(database: Database) -> None:
         """Periodically purge expired sessions from the database."""
         while True:
@@ -200,14 +207,19 @@ def create_app(config: InfraGuardConfig) -> Starlette:
         await router.close()
         await db.close()
 
-    app = Starlette(
-        routes=[
-            Route(health_route, health_check, methods=["GET"]),
-            Route("/{path:path}", proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
-            Route("/", proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
-        ],
-        lifespan=lifespan,
-    )
+    routes = [
+        Route(health_route, health_check, methods=["GET"]),
+    ]
+    if _phishingclub_handler is not None:
+        pc_path = "/" + pc_cfg.webhook_path.strip("/")
+        routes.append(Route(pc_path, _phishingclub_handler, methods=["POST"]))
+        log.info("phishingclub_webhook_registered", path=pc_path)
+    routes.extend([
+        Route("/{path:path}", proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
+        Route("/", proxy_handler, methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"]),
+    ])
+
+    app = Starlette(routes=routes, lifespan=lifespan)
 
     app.add_middleware(RequestLoggingMiddleware)
     app.add_middleware(

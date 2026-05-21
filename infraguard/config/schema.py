@@ -100,7 +100,7 @@ class ContentRouteGuardConfig(BaseModel):
     """Environment keying and delivery guardrails for content routes.
 
     Evaluated before the backend is called. Blocks requests that do not match
-    the expected beacon environment — preventing automated scanners, analysts,
+    the expected beacon environment - preventing automated scanners, analysts,
     and sandboxes from retrieving payloads even if they know the URL.
 
     All checks are AND-ed: every enabled check must pass.
@@ -346,6 +346,33 @@ class TimingConfig(BaseModel):
     max_delay_ms: int = 200
 
 
+class PhishingClubConfig(BaseModel):
+    """Phishing.club integration configuration.
+
+    Enables InfraGuard to receive webhook events from a phishing.club server.
+    Phishing.club fires HMAC-SHA256–signed POST requests when campaign events
+    occur (recipient clicks, credential submissions, browser metadata).
+
+    InfraGuard validates the signature, records the event to the tracking
+    database, and (optionally) promotes the clicking IP to the dynamic
+    whitelist so subsequent redirector requests from that IP pass filters.
+
+    Webhook endpoint is added to the main proxy app at ``webhook_path``.
+    Configure phishing.club to POST to https://<your-redirector>/<webhook_path>.
+    """
+
+    enabled: bool = False
+    webhook_path: str = "/wb/pc"
+    # Secret key set in phishing.club webhook config; used for HMAC-SHA256 validation.
+    webhook_secret: str | None = None
+    # If True, the client IP recorded in the phishing.club event is whitelisted
+    # in InfraGuard's dynamic whitelist so beacon callbacks from that IP pass.
+    whitelist_on_click: bool = False
+    # Map phishing.club event IDs to InfraGuard filter_result labels.
+    # Default treats all campaign events as "allow" (legitimate target activity).
+    event_result_label: str = "allow"
+
+
 class InfraGuardConfig(BaseModel):
     """Root configuration model for InfraGuard."""
 
@@ -359,6 +386,7 @@ class InfraGuardConfig(BaseModel):
     timing: TimingConfig = Field(default_factory=TimingConfig)
     deadman: DeadManConfig = Field(default_factory=DeadManConfig)
     payload_tokens: PayloadTokenConfig = Field(default_factory=PayloadTokenConfig)
+    phishingclub: PhishingClubConfig = Field(default_factory=PhishingClubConfig)
     decoy_pages_dir: str = "pages"
     plugins: list[str] = Field(default_factory=list)
     plugin_settings: dict[str, PluginSettings] = Field(default_factory=dict)

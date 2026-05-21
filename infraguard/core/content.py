@@ -193,7 +193,7 @@ class MythicFileBackend:
     Proxies GET {target}/direct/download/{file_id} to the beacon, preserving
     Content-Type and Content-Disposition from Mythic's response.
 
-    Mythic's /direct/download/{uuid} endpoint is unauthenticated — access
+    Mythic's /direct/download/{uuid} endpoint is unauthenticated - access
     control is provided entirely by InfraGuard's filter pipeline, content
     guard (require_beacon_ip, allowed_user_agents, required_headers), one-time
     tokens, and rate limiting. Set ssl_verify: false for Mythic's default

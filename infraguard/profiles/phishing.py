@@ -58,6 +58,14 @@ _CUDDLEPHISH_PATTERNS = [
     re.compile(r"^/"),  # CuddlePhish proxies full OAuth flows
 ]
 
+# Phishing.club: reverse-proxy phishing platform with campaign-dynamic paths.
+# Proxies full domain (landing pages, tracking, form submissions, static assets).
+# Uses DOM-rewriting + dynamic obfuscation so paths are campaign-specific.
+# Operator can narrow with allowed_paths; default is passthrough-style.
+_PHISHINGCLUB_PATTERNS = [
+    re.compile(r"^/"),  # all paths - campaign paths are dynamic
+]
+
 
 def _compile_operator_patterns(paths: list[str]) -> list[re.Pattern[str]]:
     """Compile operator-defined path patterns into regex.
@@ -116,6 +124,9 @@ def build_phishing_profile(
     elif framework == ProfileType.CUDDLEPHISH:
         name = "CuddlePhish"
         default_patterns = list(_CUDDLEPHISH_PATTERNS)
+    elif framework == ProfileType.PHISHING_CLUB:
+        name = "Phishing.club"
+        default_patterns = list(_PHISHINGCLUB_PATTERNS)
     elif framework == ProfileType.PASSTHROUGH:
         # If operator defines paths, use those instead of passthrough
         if operator_paths:
