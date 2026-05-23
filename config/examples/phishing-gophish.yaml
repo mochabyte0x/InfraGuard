@@ -1,0 +1,110 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — GoPhish Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a GoPhish server. No C2 profile needed — InfraGuard
+# uses built-in GoPhish path patterns: /track/*, /report, /static/*, /.
+#
+# Campaign tokens gate the phishing page behind a per-campaign value
+# embedded in email links. Analysts discovering the URL via CT logs,
+# threat feeds, or paste sites cannot load the page without the token.
+#
+# Stack:
+#   Target (email link) → InfraGuard (443) → GoPhish (3333)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT      - path to TLS cert
+#   INFRAGUARD_TLS_KEY       - path to TLS key
+#   GOPHISH_UPSTREAM         - e.g. https://127.0.0.1:3333
+#   CAMPAIGN_TOKEN_Q1        - campaign token embedded in email links
+#   CAMPAIGN_TOKEN_Q2        - second campaign token (e.g. Q2 campaign)
+#   INFRAGUARD_DB_PATH       - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "phish.example.com"
+
+domains:
+  phish.example.com:
+    upstream: "${GOPHISH_UPSTREAM}"
+    profile_type: "gophish"
+
+    # Narrow to specific paths if campaign pages use known URLs:
+    # allowed_paths:
+    #   - "/custom-landing"
+    #   - "/campaigns/*"
+    #   - "~^/t/[a-f0-9]+"    # regex (prefix with ~)
+
+    campaign_token:
+      enabled: true
+      token_param: "t"                    # ?t= appended to email links
+      tokens:
+        - "${CAMPAIGN_TOKEN_Q1}"
+        - "${CAMPAIGN_TOKEN_Q2}"
+      # HMAC alternative (rotate token via secret rather than static list):
+      # hmac_secret: "${CAMPAIGN_HMAC_SECRET}"
+      # hmac_ttl_seconds: 604800          # 7 days
+      score_on_missing: 0.8               # adds to pipeline score; 0.8 tips most visitors to BLOCK
+
+    drop_action:
+      type: "redirect"
+      target: "https://example.com"
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.7
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: false             # disable replay for phishing — targets click once
+  enable_enumeration_filter: true
+  enumeration_unique_path_threshold: 15
+  enumeration_window_seconds: 60
+  enable_sandbox_filter: true             # blocks Microsoft Safe Links, sandboxes
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+  ct_monitor:
+    enabled: true
+    interval_hours: 4.0                   # detect new certs issued for this domain fast
+    monitored_domains:
+      - "phish.example.com"
+  reputation_monitor:
+    enabled: true
+    interval_hours: 2.0                   # check URLhaus / OpenPhish frequently
+    check_urlhaus: true
+    check_openphish: true
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 14
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"

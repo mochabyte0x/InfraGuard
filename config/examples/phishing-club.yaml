@@ -1,0 +1,145 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — Phishing.club Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a phishing.club server. All paths forwarded —
+# phishing.club generates campaign-specific paths dynamically. Use
+# allowed_paths to restrict if campaign paths are predictable.
+#
+# Webhook integration: phishing.club fires HMAC-signed POST events when
+# campaign actions occur. InfraGuard validates the signature, records
+# each event to the tracking DB, and dispatches real-time alerts via
+# configured Discord/Slack plugins.
+#
+# Optional whitelist_on_click: promotes the clicking target's IP to
+# InfraGuard's dynamic whitelist — useful when pairing this phishing
+# redirector with a C2 redirector on the same host.
+#
+# Stack (redirector):
+#   Target (email link) → InfraGuard (443) → phishing.club HTTP server (8000)
+#
+# Stack (webhook):
+#   phishing.club → POST https://<redirector>/<webhook_path>
+#                → InfraGuard validates HMAC → records + alerts
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT           - path to TLS cert
+#   INFRAGUARD_TLS_KEY            - path to TLS key
+#   PHISHINGCLUB_UPSTREAM         - e.g. http://127.0.0.1:8000
+#   CAMPAIGN_TOKEN_Q1             - per-campaign token embedded in email links
+#   PHISHINGCLUB_WEBHOOK_SECRET   - secret set in phishing.club webhook config
+#   DISCORD_WEBHOOK_URL           - Discord webhook for real-time hit alerts
+#   INFRAGUARD_DB_PATH            - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "phish.example.com"
+
+domains:
+  phish.example.com:
+    upstream: "${PHISHINGCLUB_UPSTREAM}"
+    profile_type: "phishing_club"
+
+    # Narrow to specific paths if campaign paths are known:
+    # allowed_paths:
+    #   - "/c/*"                  # campaign landing pages
+    #   - "/t/*"                  # tracking pixel paths
+    #   - "/s/*"                  # static assets
+
+    campaign_token:
+      enabled: true
+      token_param: "t"
+      tokens:
+        - "${CAMPAIGN_TOKEN_Q1}"
+      score_on_missing: 0.8
+
+    drop_action:
+      type: "redirect"
+      target: "https://example.com"
+
+# ── Phishing.club webhook receiver ────────────────────────────────────
+# Configure phishing.club to POST to: https://phish.example.com/wb/pc
+# Set the webhook secret in phishing.club admin UI to match PHISHINGCLUB_WEBHOOK_SECRET.
+#
+# Events that trigger high-value alerts (score 1.0):
+#   data_submitted, credentials_submitted, oauth_token_captured,
+#   device_code_captured, mfa_submitted
+#
+# Events that trigger standard alerts (score 0.5):
+#   email_opened, link_clicked, browser_metadata
+phishingclub:
+  enabled: true
+  webhook_path: "/wb/pc"                              # randomize this in production
+  webhook_secret: "${PHISHINGCLUB_WEBHOOK_SECRET}"
+  whitelist_on_click: false
+  event_result_label: "allow"
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.65
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: false
+  enable_enumeration_filter: true
+  enable_sandbox_filter: true
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+  ct_monitor:
+    enabled: true
+    interval_hours: 4.0
+    monitored_domains:
+      - "phish.example.com"
+  reputation_monitor:
+    enabled: true
+    interval_hours: 2.0
+    check_urlhaus: true
+    check_openphish: true
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 14
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"
+
+plugins:
+  - infraguard.plugins.builtin.discord
+
+plugin_settings:
+  discord:
+    enabled: true
+    event_filter:
+      only_blocked: false       # forward all events including phishing.club hits
+      min_score: 0.5            # alert on high-value credential captures
+    options:
+      webhook_url: "${DISCORD_WEBHOOK_URL}"
+      username: "InfraGuard"

