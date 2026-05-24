@@ -54,7 +54,7 @@ InfraGuard sits between the internet and your C2 teamserver, validating every in
 
 ## Installation Guide
 
-Check out the [Wiki Page](https://github.com/Whispergate/InfraGuard/wiki/03.-Installation) for installation
+Check out the [Wiki Page](https://infraguard.whispergate.org/docs/getting-started/installation/) for installation
 
 ## CLI Reference
 
