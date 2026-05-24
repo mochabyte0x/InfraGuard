@@ -55,8 +55,7 @@ listeners:
       - "localhost"
 ```
 
-{: .danger }
-> Never run HTTP listeners on a public interface in production. TLS is required — HTTP exposes the C2 profile and all implant traffic in plaintext.
+> **Warning:** Never run HTTP listeners on a public interface in production. TLS is required — HTTP exposes the C2 profile and all implant traffic in plaintext.
 
 ## Domain Routing
 

@@ -10,7 +10,6 @@ nav_order: 1
 
 Smart ASGI redirector for red team C2, phishing, and payload delivery infrastructure. Runs in front of any C2 or phishing server — validates inbound traffic, blocks scanners and sandboxes, and presents cover content to unwanted visitors.
 
-{: .warning }
 > **Authorized use only.** InfraGuard is a red team tool. Deploy only in engagements and lab environments you are authorized to operate in.
 
 ## What InfraGuard Does
