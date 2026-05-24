@@ -9,7 +9,7 @@ InfraGuard sits between the internet and your C2 teamserver, validating every in
 
 ## Architecture
 
-![Architecture Diagram](/images/InfraGuard%20Infrastructure%20Diagram.drawio.png)
+![Architecture Diagram](/images/InfraGuard%20Infrastructure%20Diagram.v2.png)
 
 ## Features
 

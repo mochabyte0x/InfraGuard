@@ -220,6 +220,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Hugo build output
+wiki/public/
+wiki/resources/
+wiki/
+
 # Vendor source (cloned at build time, not tracked)
 vendor/pwndrop/pwndrop/
 images/.$InfraGuard Infrastructure Diagram.drawio.bkp
