@@ -3,7 +3,7 @@ description: Red team C2, phishing, and payload delivery infrastructure redirect
 remote_theme: just-the-docs/just-the-docs@v0.7.0
 
 url: "https://whispergate.github.io"
-baseurl: ""
+baseurl: "/InfraGuard"
 
 color_scheme: dark
 search_enabled: true

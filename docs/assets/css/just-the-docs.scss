@@ -1,0 +1,122 @@
+---
+---
+@import url("https://just-the-docs.github.io/just-the-docs/assets/css/just-the-docs.css");
+
+:root {
+  --clr-heading-text: #f5f6fa;
+  --clr-body-text: #d0d4e0;
+  --clr-body-background: #1a1d2e;
+  --clr-sidebar-background: #141624;
+  --clr-nav-background: #141624;
+  --clr-border-color: #2d3048;
+  --clr-code-background: #0d0f1a;
+  --clr-code-text: #e2e4f0;
+  --clr-search-background: #1f2235;
+  --clr-btn-primary-background: #a32d2d;
+  --clr-btn-primary-text: #fff;
+  --color-scheme: dark;
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--clr-body-background);
+  color: var(--clr-body-text);
+}
+
+.side-bar {
+  background-color: var(--clr-sidebar-background);
+  border-right: 1px solid var(--clr-border-color);
+}
+
+.site-title {
+  color: #e2e4f0 !important;
+}
+
+.nav-list .nav-list-item .nav-list-link {
+  color: #b0b8d0;
+}
+
+.nav-list .nav-list-item .nav-list-link:hover,
+.nav-list .nav-list-item .nav-list-link.active {
+  color: #e2e4f0;
+  background-color: #2d3048;
+}
+
+.main-content {
+  background-color: var(--clr-body-background);
+  color: var(--clr-body-text);
+}
+
+.main-content h1, .main-content h2, .main-content h3,
+.main-content h4, .main-content h5, .main-content h6 {
+  color: var(--clr-heading-text);
+}
+
+.main-content a {
+  color: #7ab3e8;
+}
+
+.main-content table {
+  background-color: #1f2235;
+  border-color: var(--clr-border-color);
+}
+
+.main-content thead {
+  background-color: #252840;
+  color: #e2e4f0;
+}
+
+.main-content tr:nth-child(even) {
+  background-color: #1f2235;
+}
+
+.main-content tr:nth-child(odd) {
+  background-color: #1a1d2e;
+}
+
+.main-content td, .main-content th {
+  border-color: var(--clr-border-color);
+  color: var(--clr-body-text);
+}
+
+.main-content code {
+  background-color: var(--clr-code-background);
+  color: var(--clr-code-text);
+  border-color: var(--clr-border-color);
+}
+
+.main-content pre {
+  background-color: var(--clr-code-background);
+  border-color: var(--clr-border-color);
+}
+
+.main-content pre code {
+  color: var(--clr-code-text);
+}
+
+.main-content blockquote {
+  color: #a0a8c0;
+  border-left-color: #a32d2d;
+  background-color: #1f2235;
+}
+
+.search-input {
+  background-color: var(--clr-search-background);
+  color: #e2e4f0;
+  border-color: var(--clr-border-color);
+}
+
+.main-header {
+  background-color: var(--clr-sidebar-background);
+  border-bottom-color: var(--clr-border-color);
+}
+
+.site-footer {
+  color: #606880;
+  border-top-color: var(--clr-border-color);
+}
+
+.label {
+  background-color: #2d3048;
+  color: #b0b8d0;
+}
