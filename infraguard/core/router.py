@@ -485,8 +485,21 @@ class DomainRouter:
         else:
             client_ip = ip_address("0.0.0.0")
 
+        # ── Beacon URI passthrough ─────────────────────────────────
+        # If the URI matches a C2 profile URI, skip content_routes and
+        # let the C2 pipeline (ProfileFilter validates headers / cookie /
+        # transforms) decide. On match the request is forwarded upstream;
+        # on mismatch handle_drop serves the decoy. Lets one domain serve
+        # a decoy to scanners AND forward shaped beacons to the teamserver.
+        from infraguard.models.common import PHISHING_PROFILE_TYPES
+        is_beacon_uri = (
+            route.config.profile_type not in PHISHING_PROFILE_TYPES
+            and route.profile is not None
+            and request.url.path in route.profile.all_uris()
+        )
+
         # ── IP check before content routes (OPSEC-06) ────────────
-        if route.content_resolver:
+        if route.content_resolver and not is_beacon_uri:
             if route.config.content_route_filter == "full_pipeline":
                 # Full pipeline evaluation before content routes
                 body = await request.body()
