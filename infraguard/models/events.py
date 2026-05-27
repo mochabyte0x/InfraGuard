@@ -2,8 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+
+
+def compute_request_hash(
+    method: str, path: str, user_agent: str, cookie: str, body: bytes | None
+) -> str:
+    """Stable per-request fingerprint used by ReplayFilter and the tracking DB.
+
+    Keeping this in one place ensures the replay-detection hash and the
+    `requests.request_hash` column always agree.
+    """
+    sig = hashlib.sha256()
+    sig.update(method.encode())
+    sig.update(path.encode())
+    sig.update(user_agent.encode())
+    sig.update(cookie.encode())
+    if isinstance(body, (bytes, bytearray)):
+        sig.update(body)
+    return sig.hexdigest()
 
 
 @dataclass

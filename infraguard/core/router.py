@@ -29,7 +29,7 @@ from infraguard.core.rate_limiter import ContentRateLimiter
 from infraguard.intel.ip_lists import CIDRList
 from infraguard.intel.manager import IntelManager
 from infraguard.models.common import DropActionType
-from infraguard.models.events import RequestEvent
+from infraguard.models.events import RequestEvent, compute_request_hash
 from infraguard.pipeline.base import FilterPipeline, RequestContext
 from infraguard.pipeline.bot_filter import BotFilter
 from infraguard.pipeline.dns_filter import DNSFilter
@@ -549,12 +549,23 @@ class DomainRouter:
 
         # ── C2 filter pipeline ────────────────────────────────────
         body = await request.body()
+        request_hash = compute_request_hash(
+            method=request.method,
+            path=request.url.path,
+            user_agent=request.headers.get("user-agent", ""),
+            cookie=request.headers.get("cookie", ""),
+            body=body,
+        )
         ctx = RequestContext(
             request=request,
             client_ip=client_ip,
             domain_config=route.config,
             profile=route.profile,
-            metadata={"body": body, "ja3": getattr(request.state, "ja3", None)},
+            metadata={
+                "body": body,
+                "ja3": getattr(request.state, "ja3", None),
+                "request_hash": request_hash,
+            },
         )
 
         result = await route.pipeline.evaluate(ctx)
@@ -696,6 +707,7 @@ class DomainRouter:
                     filter_score=result.total_score,
                     response_status=status_code,
                     duration_ms=round(duration_ms, 1),
+                    request_hash=ctx.metadata.get("request_hash", ""),
                 )
             )
 
@@ -713,15 +725,31 @@ class DomainRouter:
         content_config = match.route
         filter_score = 0.0
 
+        # Compute the request hash once up-front so every recorded event in
+        # this path (content_blocked / guard_blocked / rate_limited /
+        # content_served) gets a populated request_hash column. Starlette
+        # caches the body, so downstream backends still see it.
+        body = await request.body()
+        request_hash = compute_request_hash(
+            method=request.method,
+            path=request.url.path,
+            user_agent=request.headers.get("user-agent", ""),
+            cookie=request.headers.get("cookie", ""),
+            body=body,
+        )
+
         # Optional fingerprint check for conditional delivery
         if content_config.conditional and content_config.conditional.use_fingerprint_filters:
-            body = await request.body()
             ctx = RequestContext(
                 request=request,
                 client_ip=client_ip,
                 domain_config=route.config,
                 profile=route.profile,
-                metadata={"body": body, "ja3": getattr(request.state, "ja3", None)},
+                metadata={
+                    "body": body,
+                    "ja3": getattr(request.state, "ja3", None),
+                    "request_hash": request_hash,
+                },
             )
             if route.fingerprint_pipeline:
                 fp_result = await route.fingerprint_pipeline.evaluate(ctx)
@@ -746,6 +774,7 @@ class DomainRouter:
                     self._record_content_event(
                         route.domain, client_ip, request, response,
                         "content_blocked", filter_score, start, content_config.track,
+                        request_hash=request_hash,
                     )
                     return response
 
@@ -764,6 +793,7 @@ class DomainRouter:
                     route.domain, client_ip, request,
                     Response(status_code=403, content=b"Forbidden"),
                     "guard_blocked", filter_score, start, content_config.track,
+                    request_hash=request_hash,
                 )
                 return await handle_drop(request, route.config.drop_action)
 
@@ -814,6 +844,7 @@ class DomainRouter:
                     self._record_content_event(
                         route.domain, client_ip, request, response,
                         "rate_limited", filter_score, start, content_config.track,
+                        request_hash=request_hash,
                     )
                     return response
                 return Response(status_code=429, content=b"Too Many Requests")
@@ -834,6 +865,7 @@ class DomainRouter:
         self._record_content_event(
             route.domain, client_ip, request, response,
             "content_served", filter_score, start, content_config.track,
+            request_hash=request_hash,
         )
         return response
 
@@ -874,6 +906,7 @@ class DomainRouter:
         filter_score: float,
         start: float,
         track: bool,
+        request_hash: str = "",
     ) -> None:
         """Record a content delivery event to the tracking database."""
         if not track or not self._recorder:
@@ -891,6 +924,7 @@ class DomainRouter:
                 filter_score=filter_score,
                 response_status=response.status_code,
                 duration_ms=round(duration_ms, 1),
+                request_hash=request_hash,
             )
         )
 

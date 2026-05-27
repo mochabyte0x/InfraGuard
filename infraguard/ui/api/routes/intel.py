@@ -53,10 +53,12 @@ async def remove_blocklist(request: Request) -> JSONResponse:
     body = await request.json()
     ip_str = body.get("ip", "")
 
-    # Normalize to CIDR if it's a single IP
+    # Try exact CIDR match first, then fall back to containing-range removal
     cidr = ip_str if "/" in ip_str else f"{ip_str}/32"
-
     removed = intel.blocklist.remove(cidr)
+    if not removed:
+        removed = intel.blocklist.remove_containing(ip_str.split("/")[0])
+
     return JSONResponse({
         "status": "ok" if removed else "not_found",
         "ip": ip_str,

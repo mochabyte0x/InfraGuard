@@ -18,6 +18,22 @@ from infraguard.profiles.transforms import TransformChain
 class ProfileFilter:
     name = "profile"
 
+    # Headers that CDNs (Cloudflare, Fastly, Akamai, etc.) routinely rewrite
+    # or normalize before reaching origin. The header must still be present
+    # (real browsers always send these) but the exact value is not enforced,
+    # otherwise legitimate beacons fronted by a CDN fail the profile check.
+    _CDN_VOLATILE_HEADERS = frozenset({
+        "accept-encoding",   # CF strips/replaces for caching; e.g. "gzip, deflate, br, zstd" -> "gzip, br"
+        "via",               # added by some proxies/CDNs
+        "x-forwarded-for",   # added by CDNs
+        "x-forwarded-proto",
+        "x-real-ip",
+        "cf-connecting-ip",
+        "cf-ipcountry",
+        "cf-ray",
+        "cf-visitor",
+    })
+
     async def check(self, ctx: RequestContext) -> FilterResult:
         profile = ctx.profile
         request = ctx.request
@@ -53,8 +69,9 @@ class ProfileFilter:
 
         # Validate required client headers
         for header_name, expected_value in txn.client.headers.items():
+            lower_name = header_name.lower()
             # Host header is special - the proxy may rewrite it
-            if header_name.lower() == "host":
+            if lower_name == "host":
                 continue
             actual = request.headers.get(header_name)
             if actual is None:
@@ -63,6 +80,9 @@ class ProfileFilter:
                     filter_name=self.name,
                     score=0.9,
                 )
+            # CDN-rewritten headers: presence is required, exact value is not.
+            if lower_name in self._CDN_VOLATILE_HEADERS:
+                continue
             if actual != expected_value:
                 return FilterResult.block(
                     reason=f"Header '{header_name}' value mismatch",

@@ -61,10 +61,15 @@ class FilterResult(BaseModel):
     score: float = 0.0
     reason: str | None = None
     filter_name: str = ""
+    terminal: bool = False  # When True + ALLOW, pipeline stops immediately (e.g. explicit whitelist)
 
     @classmethod
     def allow(cls, filter_name: str = "", score: float = 0.0) -> FilterResult:
         return cls(action=FilterAction.ALLOW, score=score, filter_name=filter_name)
+
+    @classmethod
+    def allow_terminal(cls, filter_name: str = "") -> FilterResult:
+        return cls(action=FilterAction.ALLOW, score=0.0, filter_name=filter_name, terminal=True)
 
     @classmethod
     def block(

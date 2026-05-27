@@ -7,13 +7,13 @@ A captured beacon request cannot be replayed after InfraGuard is restarted.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import time
 from typing import TYPE_CHECKING
 
 import structlog
 
 from infraguard.models.common import FilterResult
+from infraguard.models.events import compute_request_hash
 from infraguard.pipeline.base import RequestContext
 
 if TYPE_CHECKING:
@@ -66,16 +66,18 @@ class ReplayFilter:
 
     async def check(self, ctx: RequestContext) -> FilterResult:
         request = ctx.request
-        body = ctx.metadata.get("body", b"")
-
-        sig = hashlib.sha256()
-        sig.update(request.method.encode())
-        sig.update(request.url.path.encode())
-        sig.update(request.headers.get("user-agent", "").encode())
-        sig.update(request.headers.get("cookie", "").encode())
-        if isinstance(body, bytes):
-            sig.update(body)
-        request_hash = sig.hexdigest()
+        # Prefer a hash already stashed by the router so a single
+        # computation flows into both replay detection and the tracking DB.
+        request_hash = ctx.metadata.get("request_hash")
+        if not request_hash:
+            request_hash = compute_request_hash(
+                method=request.method,
+                path=request.url.path,
+                user_agent=request.headers.get("user-agent", ""),
+                cookie=request.headers.get("cookie", ""),
+                body=ctx.metadata.get("body", b""),
+            )
+            ctx.metadata["request_hash"] = request_hash
 
         now = time.time()
 

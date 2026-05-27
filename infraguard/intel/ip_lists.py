@@ -121,6 +121,24 @@ class CIDRList:
             except ValueError:
                 return False
 
+    def remove_containing(self, ip_str: str) -> bool:
+        """Remove the first CIDR that contains ip_str. Returns True if removed."""
+        try:
+            ip = ip_address(ip_str)
+        except ValueError:
+            return False
+        if isinstance(ip, IPv4Address):
+            for net in list(self._networks_v4):
+                if ip in net:
+                    self._networks_v4.remove(net)
+                    return True
+        else:
+            for net in list(self._networks_v6):
+                if ip in net:
+                    self._networks_v6.remove(net)
+                    return True
+        return False
+
 
 class DynamicWhitelist:
     """Auto-whitelist IPs after N consecutive valid C2 requests."""

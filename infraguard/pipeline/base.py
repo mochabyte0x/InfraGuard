@@ -91,6 +91,10 @@ class FilterPipeline:
                 result.filter_name = f.name
                 results.append(result)
 
+                # Terminal allow (e.g. explicit IP whitelist) — skip remaining filters
+                if result.terminal and result.action == FilterAction.ALLOW:
+                    break
+
                 if hard_mode:
                     # Hard mode: any BLOCK or SUSPECT = immediate reject
                     if result.action in (FilterAction.BLOCK, FilterAction.SUSPECT):
