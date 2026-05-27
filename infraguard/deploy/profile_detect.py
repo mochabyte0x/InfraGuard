@@ -42,6 +42,8 @@ def detect_profile_type(profile_path: Path) -> ProfileType:
                     return ProfileType.BRUTE_RATEL
                 if "implant_config" in data and "server_config" in data:
                     return ProfileType.SLIVER
+                if "instances" in data and isinstance(data["instances"], list):
+                    return ProfileType.MYTHIC_HTTP
             except Exception:
                 pass
         # Default for JSON when file is absent or unrecognised shape

@@ -89,6 +89,19 @@ class ProxyHandler:
             extra_allowed=extra,
             server_header=persona_server,
         )
+        # httpx auto-decompresses and de-chunks resp.content. Strip
+        # encoding/framing headers so clients don't try to re-process an
+        # already-decoded body (Transfer-Encoding: chunked in particular
+        # causes .NET HttpWebRequest to fail parsing → agent re-stages).
+        resp_headers.pop("content-encoding", None)
+        resp_headers.pop("Content-Encoding", None)
+        resp_headers.pop("transfer-encoding", None)
+        resp_headers.pop("Transfer-Encoding", None)
+        # Drop upstream Content-Length — it reflects the on-wire (possibly
+        # compressed/chunked) length, but resp.content is the decoded body.
+        # Let Starlette recompute from the actual bytes we forward.
+        resp_headers.pop("content-length", None)
+        resp_headers.pop("Content-Length", None)
 
         return Response(
             content=resp.content,

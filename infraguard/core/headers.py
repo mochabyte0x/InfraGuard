@@ -13,13 +13,11 @@ DEFAULT_SAFE_HEADERS: frozenset[str] = frozenset(
     {
         "content-type",
         "content-length",
-        "content-encoding",
         "cache-control",
         "etag",
         "last-modified",
         "location",
         "set-cookie",
-        "transfer-encoding",
         "date",
         "expires",
         "pragma",

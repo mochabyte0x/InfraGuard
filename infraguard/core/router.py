@@ -325,6 +325,9 @@ class DomainRouter:
             return parse_nighthawk_file(path)
         elif config.profile_type.value == "poshc2":
             return parse_poshc2_file(path)
+        elif config.profile_type.value == "mythic_http":
+            from infraguard.profiles.mythic_http import parse_mythic_http_file
+            return parse_mythic_http_file(path)
         else:
             return parse_mythic_file(path)
 
