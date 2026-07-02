@@ -19,6 +19,20 @@ class IPFilter:
         ip = ctx.client_ip
         ip_str = str(ip)
 
+        # Run full classification (checks global whitelist/blocklist)
+        classification = await self.intel.classify(ip)
+
+        # Global whitelist overrides domain-specific restrictions
+        if classification.is_whitelisted:
+            return FilterResult.allow_terminal(filter_name=self.name)
+
+        if classification.is_blocked:
+            return FilterResult.block(
+                reason=classification.reason or f"IP {ip_str} blocked",
+                filter_name=self.name,
+                score=1.0,
+            )
+
         # Check domain-specific whitelist (if whitelist is set, ONLY those IPs are allowed)
         domain_wl = self.domain_whitelists.get(
             ctx.request.headers.get("host", "").split(":")[0]
@@ -30,18 +44,5 @@ class IPFilter:
                     filter_name=self.name,
                     score=1.0,
                 )
-
-        # Run full classification
-        classification = await self.intel.classify(ip)
-
-        if classification.is_whitelisted:
-            return FilterResult.allow_terminal(filter_name=self.name)
-
-        if classification.is_blocked:
-            return FilterResult.block(
-                reason=classification.reason or f"IP {ip_str} blocked",
-                filter_name=self.name,
-                score=1.0,
-            )
 
         return FilterResult.allow(filter_name=self.name)
