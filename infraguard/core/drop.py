@@ -128,14 +128,16 @@ async def _proxy_decoy(
                 server_header=persona.server_header,
             )
 
-            return Response(
+            response = Response(
                 content=resp.content,
                 status_code=resp.status_code,
                 headers=resp_headers,
             )
+            preserve_multi_value_headers(response, resp.headers)
+            return response
     except (httpx.RequestError, httpx.TimeoutException):
         log.warning("decoy_proxy_error", target=full_url)
-        response =  Response(
+        return Response(
             status_code=502,
             content=(
                 persona.error_body_404.encode()
@@ -148,8 +150,6 @@ async def _proxy_decoy(
                 **persona.extra_headers,
             },
         )
-        preserve_multi_value_headers(response, resp.headers)
-        return response
 
 
 async def _tarpit_response(persona: PersonaConfig) -> Response:
