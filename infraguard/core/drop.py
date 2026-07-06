@@ -18,6 +18,7 @@ from infraguard.core.headers import sanitize_response_headers
 from infraguard.core.ssl_context import build_ssl_context
 from infraguard.intel.canary import inject_all_canaries
 from infraguard.models.common import DropActionType
+from .headers import sanitize_response_headers, preserve_multi_value_headers
 
 log = structlog.get_logger()
 
@@ -134,7 +135,7 @@ async def _proxy_decoy(
             )
     except (httpx.RequestError, httpx.TimeoutException):
         log.warning("decoy_proxy_error", target=full_url)
-        return Response(
+        response =  Response(
             status_code=502,
             content=(
                 persona.error_body_404.encode()
@@ -147,6 +148,8 @@ async def _proxy_decoy(
                 **persona.extra_headers,
             },
         )
+        preserve_multi_value_headers(response, resp.headers)
+        return response
 
 
 async def _tarpit_response(persona: PersonaConfig) -> Response:
